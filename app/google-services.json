@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "15543678982",
+    "project_id": "sapachat-c0fec",
+    "storage_bucket": "sapachat-c0fec.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:15543678982:android:08560e9452616bdeadab87",
+        "android_client_info": {
+          "package_name": "com.syauqialfanzari0008.sapachat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBbhj56sIFotvpcD9H02aIwQpa_5vIlUWk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
