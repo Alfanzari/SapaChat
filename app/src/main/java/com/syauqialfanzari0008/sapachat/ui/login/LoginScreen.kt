@@ -10,24 +10,31 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 
 @Composable
-fun LoginScreen(onNavigateToRegister: () -> Unit) {
+fun LoginScreen(
+    onNavigateToRegister: () -> Unit,
+    onNavigateToUserHome: () -> Unit,
+    onNavigateToAdminHome: () -> Unit
+) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     val auth = FirebaseAuth.getInstance()
-    val context = LocalContext.current
+    val db = FirebaseFirestore.getInstance()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
+            .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Masuk ke SapaChat",
+            text = "Masuk SapaChat",
             style = MaterialTheme.typography.headlineMedium
         )
 
@@ -52,27 +59,60 @@ fun LoginScreen(onNavigateToRegister: () -> Unit) {
             singleLine = true
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
         Button(
             onClick = {
-                if (email.isNotEmpty() && password.isNotEmpty()) {
-                    auth.signInWithEmailAndPassword(email, password)
+                if (email.isNotBlank() && password.isNotBlank()) {
+                    isLoading = true
+                    auth.signInWithEmailAndPassword(email.trim(), password)
                         .addOnCompleteListener { task ->
                             if (task.isSuccessful) {
-                                Toast.makeText(context, "Login Berhasil!", Toast.LENGTH_SHORT).show()
-                                // Catatan: Besok kita buat navigasi untuk pindah ke halaman Chat di sini
+                                val userId = auth.currentUser?.uid ?: ""
+
+                                // Tahan user sebentar, cek statusnya di Firestore
+                                db.collection("Users").document(userId).get()
+                                    .addOnSuccessListener { document ->
+                                        isLoading = false
+                                        if (document.exists()) {
+                                            val role = document.getString("role")
+                                            val isBanned = document.getBoolean("isBanned") ?: false
+
+                                            // PENOLAKAN AKUN YANG DIBLOKIR
+                                            if (isBanned && role != "Admin") {
+                                                auth.signOut() // Tendang keluar dari sistem auth
+                                                Toast.makeText(context, "Akun Anda telah dinonaktifkan oleh Admin.", Toast.LENGTH_LONG).show()
+                                            } else {
+                                                // Izinkan masuk sesuai peran
+                                                if (role == "Admin") {
+                                                    onNavigateToAdminHome()
+                                                } else {
+                                                    onNavigateToUserHome()
+                                                }
+                                            }
+                                        } else {
+                                            auth.signOut()
+                                            Toast.makeText(context, "Data profil tidak ditemukan.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                    .addOnFailureListener {
+                                        isLoading = false
+                                        auth.signOut()
+                                        Toast.makeText(context, "Gagal terhubung ke database.", Toast.LENGTH_SHORT).show()
+                                    }
                             } else {
-                                Toast.makeText(context, "Login Gagal: ${task.exception?.message}", Toast.LENGTH_LONG).show()
+                                isLoading = false
+                                Toast.makeText(context, "Gagal masuk: ${task.exception?.message}", Toast.LENGTH_LONG).show()
                             }
                         }
                 } else {
                     Toast.makeText(context, "Email dan Password tidak boleh kosong!", Toast.LENGTH_SHORT).show()
                 }
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isLoading
         ) {
-            Text("Masuk")
+            Text(if (isLoading) "Memeriksa..." else "Masuk")
         }
 
         Spacer(modifier = Modifier.height(16.dp))

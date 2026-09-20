@@ -10,25 +10,27 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 
 @Composable
 fun RegisterScreen(onNavigateToLogin: () -> Unit) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
-
+    var isLoading by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
     val auth = FirebaseAuth.getInstance()
+    val db = FirebaseFirestore.getInstance()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
+            .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Daftar Akun Baru",
+            text = "Daftar Akun SapaChat",
             style = MaterialTheme.typography.headlineMedium
         )
 
@@ -53,43 +55,48 @@ fun RegisterScreen(onNavigateToLogin: () -> Unit) {
             singleLine = true
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = confirmPassword,
-            onValueChange = { confirmPassword = it },
-            label = { Text("Konfirmasi Password") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
         Button(
             onClick = {
-                if (email.isNotEmpty() && password.isNotEmpty()) {
-                    if (password == confirmPassword) {
-                        // Proses daftar ke Firebase
-                        auth.createUserWithEmailAndPassword(email, password)
-                            .addOnCompleteListener { task ->
-                                if (task.isSuccessful) {
-                                    Toast.makeText(context, "Akun berhasil dibuat!", Toast.LENGTH_SHORT).show()
-                                    onNavigateToLogin() // Otomatis kembali ke layar login
-                                } else {
-                                    Toast.makeText(context, "Gagal: ${task.exception?.message}", Toast.LENGTH_LONG).show()
-                                }
+                if (email.isNotBlank() && password.isNotBlank()) {
+                    isLoading = true
+                    auth.createUserWithEmailAndPassword(email.trim(), password)
+                        .addOnCompleteListener { task ->
+                            if (task.isSuccessful) {
+                                val userId = auth.currentUser?.uid ?: ""
+
+                                // DI SINI KITA PATENKAN SEMUA PENDAFTAR SEBAGAI "User"
+                                val userMap = hashMapOf(
+                                    "uid" to userId,
+                                    "email" to email.trim(),
+                                    "role" to "User"
+                                )
+
+                                db.collection("Users").document(userId)
+                                    .set(userMap)
+                                    .addOnSuccessListener {
+                                        isLoading = false
+                                        Toast.makeText(context, "Pendaftaran berhasil!", Toast.LENGTH_SHORT).show()
+                                        onNavigateToLogin()
+                                    }
+                                    .addOnFailureListener { e ->
+                                        isLoading = false
+                                        Toast.makeText(context, "Gagal simpan data: ${e.message}", Toast.LENGTH_LONG).show()
+                                    }
+                            } else {
+                                isLoading = false
+                                Toast.makeText(context, "Gagal daftar: ${task.exception?.message}", Toast.LENGTH_LONG).show()
                             }
-                    } else {
-                        Toast.makeText(context, "Password tidak cocok!", Toast.LENGTH_SHORT).show()
-                    }
+                        }
                 } else {
                     Toast.makeText(context, "Email dan Password tidak boleh kosong!", Toast.LENGTH_SHORT).show()
                 }
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isLoading
         ) {
-            Text("Daftar")
+            Text(if (isLoading) "Mendaftar..." else "Daftar")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
