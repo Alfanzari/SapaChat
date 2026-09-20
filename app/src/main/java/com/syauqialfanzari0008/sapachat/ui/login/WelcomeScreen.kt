@@ -22,20 +22,20 @@ fun WelcomeScreen(
 ) {
     Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
 
-        // --- BAGIAN ATAS: Latar Kotak-kotak (Grid) & Gelembung Chat ---
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1.3f) // Proporsi tinggi bagian atas
-                .background(Color(0xFF222222)) // Warna latar gelap
+                .weight(1.3f)
+                .background(Color(0xFF222222))
         ) {
-            // 1. Menggambar Background Grid
+
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val canvasWidth = size.width
                 val canvasHeight = size.height
-                val step = 90f // Lebar kotak grid
+                val step = 90f
 
-                // Garis Vertikal
+
                 for (x in 0..canvasWidth.toInt() step step.toInt()) {
                     drawLine(
                         color = Color.White.copy(alpha = 0.08f),
@@ -44,7 +44,7 @@ fun WelcomeScreen(
                         strokeWidth = 2f
                     )
                 }
-                // Garis Horizontal
+
                 for (y in 0..canvasHeight.toInt() step step.toInt()) {
                     drawLine(
                         color = Color.White.copy(alpha = 0.08f),
@@ -55,7 +55,7 @@ fun WelcomeScreen(
                 }
             }
 
-            // 2. Meletakkan Gelembung Chat Melayang
+
             ChatBubbleGraphic(
                 text = "Hola!\nNice to hear from you.",
                 bgColor = Color(0xFFFFCC66),
@@ -78,18 +78,18 @@ fun WelcomeScreen(
             )
         }
 
-        // --- BAGIAN BAWAH: Teks & Tombol Aksi ---
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f) // Proporsi tinggi bagian bawah
+                .weight(1f)
                 .padding(horizontal = 24.dp, vertical = 32.dp),
             horizontalAlignment = Alignment.Start,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Column {
                 Text(
-                    text = "#SapaChat", // Saya ubah dari #Checked agar sesuai nama aplikasimu
+                    text = "#SapaChat",
                     fontSize = 36.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = Color.Black
@@ -107,7 +107,7 @@ fun WelcomeScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Tombol Get Started (Ke Register)
+
                 Button(
                     onClick = onNavigateToRegister,
                     modifier = Modifier
@@ -121,7 +121,7 @@ fun WelcomeScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Teks Login
+
                 Text(
                     text = "I already have an account.",
                     fontSize = 15.sp,
@@ -136,14 +136,14 @@ fun WelcomeScreen(
     }
 }
 
-// Komponen khusus untuk menggambar desain gelembung beserta ikon jarum pin
+
 @Composable
 fun ChatBubbleGraphic(text: String, bgColor: Color, modifier: Modifier = Modifier) {
     Box(modifier = modifier) {
         Surface(
             color = bgColor,
             shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.padding(top = 10.dp, start = 10.dp) // Ruang agar pin tidak tertutup
+            modifier = Modifier.padding(top = 10.dp, start = 10.dp)
         ) {
             Text(
                 text = text,
@@ -154,7 +154,7 @@ fun ChatBubbleGraphic(text: String, bgColor: Color, modifier: Modifier = Modifie
             )
         }
 
-        // Simulasi Ikon Pin Biru di sudut kiri atas
+
         Surface(
             color = Color(0xFF4A7D9E),
             shape = RoundedCornerShape(percent = 50),

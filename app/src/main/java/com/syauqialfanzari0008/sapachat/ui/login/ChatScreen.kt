@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,6 +39,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -51,9 +53,10 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
-// Model Data Pesan
+
 data class ChatMessage(
     val id: String = "",
     val text: String = "",
@@ -61,7 +64,10 @@ data class ChatMessage(
     val audioUrl: String = "",
     val senderId: String = "",
     val timestamp: Long = 0L,
-    val liked: Boolean = false
+    val liked: Boolean = false,
+    val replyToMessageId: String = "",
+    val replyToMessageText: String = "",
+    val replyToSenderName: String = ""
 )
 
 fun formatMessageDate(timestamp: Long): String {
@@ -109,6 +115,9 @@ fun ChatScreen(
 
     var heartAnimationTrigger by remember { mutableStateOf(0L) }
     var messageToDelete by remember { mutableStateOf<ChatMessage?>(null) }
+
+
+    var messageToReply by remember { mutableStateOf<ChatMessage?>(null) }
 
     var receiverName by remember { mutableStateOf(receiverEmail.substringBefore("@")) }
     var receiverProfileImage by remember { mutableStateOf("") }
@@ -177,6 +186,11 @@ fun ChatScreen(
 
             if (audioFile != null && audioFile!!.exists()) {
                 isUploading = true
+
+
+                val currentReplyToMsg = messageToReply
+                messageToReply = null
+
                 com.cloudinary.android.MediaManager.get().upload(audioFile!!.absolutePath)
                     .unsigned("ml_default12")
                     .option("resource_type", "auto")
@@ -185,7 +199,14 @@ fun ChatScreen(
                         override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {}
                         override fun onSuccess(requestId: String, resultData: Map<*, *>) {
                             val downloadUrl = resultData["secure_url"].toString()
-                            val newMessage = ChatMessage(audioUrl = downloadUrl, senderId = currentUserId, timestamp = System.currentTimeMillis())
+                            val newMessage = ChatMessage(
+                                audioUrl = downloadUrl,
+                                senderId = currentUserId,
+                                timestamp = System.currentTimeMillis(),
+                                replyToMessageId = currentReplyToMsg?.id ?: "",
+                                replyToMessageText = currentReplyToMsg?.text?.takeIf { it.isNotBlank() } ?: if (currentReplyToMsg?.imageUrl?.isNotEmpty() == true) "Photo" else if (currentReplyToMsg?.audioUrl?.isNotEmpty() == true) "Voice Note" else "",
+                                replyToSenderName = if (currentReplyToMsg != null) (if (currentReplyToMsg.senderId == currentUserId) currentUserName else receiverName) else ""
+                            )
                             db.collection("ChatRooms").document(roomId).collection("Messages").add(newMessage)
                             isUploading = false
                             audioFile?.delete()
@@ -204,6 +225,11 @@ fun ChatScreen(
     ) { uri ->
         if (uri != null) {
             isUploading = true
+
+
+            val currentReplyToMsg = messageToReply
+            messageToReply = null
+
             com.cloudinary.android.MediaManager.get().upload(uri)
                 .unsigned("ml_default12")
                 .callback(object : com.cloudinary.android.callback.UploadCallback {
@@ -211,7 +237,14 @@ fun ChatScreen(
                     override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {}
                     override fun onSuccess(requestId: String, resultData: Map<*, *>) {
                         val downloadUrl = resultData["secure_url"].toString()
-                        val newMessage = ChatMessage(imageUrl = downloadUrl, senderId = currentUserId, timestamp = System.currentTimeMillis())
+                        val newMessage = ChatMessage(
+                            imageUrl = downloadUrl,
+                            senderId = currentUserId,
+                            timestamp = System.currentTimeMillis(),
+                            replyToMessageId = currentReplyToMsg?.id ?: "",
+                            replyToMessageText = currentReplyToMsg?.text?.takeIf { it.isNotBlank() } ?: if (currentReplyToMsg?.imageUrl?.isNotEmpty() == true) "Photo" else if (currentReplyToMsg?.audioUrl?.isNotEmpty() == true) "Voice Note" else "",
+                            replyToSenderName = if (currentReplyToMsg != null) (if (currentReplyToMsg.senderId == currentUserId) currentUserName else receiverName) else ""
+                        )
                         db.collection("ChatRooms").document(roomId).collection("Messages").add(newMessage)
                         isUploading = false
                     }
@@ -259,9 +292,8 @@ fun ChatScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(ChatBgColor)) {
-        // PERBAIKAN UTAMA: Ditambahkan .imePadding() agar layar terdorong ke atas saat keyboard muncul
         Column(modifier = Modifier.fillMaxSize().imePadding()) {
-            // --- TOP BAR ---
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -289,7 +321,7 @@ fun ChatScreen(
                 Box(modifier = Modifier.size(40.dp))
             }
 
-            // --- AREA PESAN ---
+
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp),
@@ -318,76 +350,130 @@ fun ChatScreen(
                             },
                             onDeleteClick = { msg ->
                                 messageToDelete = msg
+                            },
+                            onReplyClick = { msg ->
+                                messageToReply = msg
                             }
                         )
                     }
                 }
             }
 
-            // --- INPUT AREA BAWAH ---
-            Row(
+
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 16.dp)
-                    .navigationBarsPadding(),
-                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (isUploading) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp).padding(end = 12.dp), color = Color.Black, strokeWidth = 2.dp)
-                } else {
-                    IconButton(
-                        onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                        modifier = Modifier.padding(end = 4.dp), enabled = !isRecording
-                    ) { Icon(imageVector = Icons.Default.Add, contentDescription = "Send Image", tint = Color.Gray) }
-                }
 
-                Surface(
-                    modifier = Modifier.weight(1f).height(56.dp),
-                    shape = RoundedCornerShape(50), color = Color.White
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 20.dp)) {
-                        BasicTextField(
-                            value = messageText, onValueChange = { messageText = it },
-                            textStyle = TextStyle(color = Color.Black, fontSize = 16.sp),
-                            cursorBrush = SolidColor(Color.Black),
-                            modifier = Modifier.weight(1f), enabled = !isRecording,
-                            decorationBox = { innerTextField ->
-                                if (messageText.isEmpty()) {
-                                    Text(if (isRecording) "Recording..." else "Ask anything here..", color = if (isRecording) Color.Red else Color.Gray, fontSize = 16.sp)
-                                }
-                                innerTextField()
-                            }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Box(
-                    modifier = Modifier
-                        .size(56.dp).clip(CircleShape)
-                        .background(if (isRecording) Color.Red else SenderBubbleColor)
-                        .clickable {
-                            if (messageText.isNotBlank()) {
-                                val newMessage = ChatMessage(text = messageText, senderId = currentUserId, timestamp = System.currentTimeMillis())
-                                db.collection("ChatRooms").document(roomId).collection("Messages").add(newMessage)
-
-                                messageText = ""
-                                db.collection("ChatRooms").document(roomId).set(
-                                    mapOf("typing_$currentUserId" to false), SetOptions.merge()
+                if (messageToReply != null) {
+                    Surface(
+                        color = Color(0xFFE0E0E0),
+                        shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 0.dp, bottomEnd = 0.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (messageToReply!!.senderId == currentUserId) currentUserName else receiverName,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = Color.Black
                                 )
-                            } else {
-                                val hasMicPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                                if (!hasMicPermission) audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                else if (isRecording) stopAndSendRecording() else startRecording()
+                                Text(
+                                    text = messageToReply!!.text.takeIf { it.isNotBlank() } ?: if (messageToReply!!.imageUrl.isNotEmpty()) "Photo" else "Voice Note",
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    color = Color.DarkGray
+                                )
                             }
-                        },
-                    contentAlignment = Alignment.Center
+                            IconButton(onClick = { messageToReply = null }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Cancel Reply", tint = Color.Black)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (messageText.isNotBlank()) {
-                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(24.dp))
+                    if (isUploading) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp).padding(end = 12.dp), color = Color.Black, strokeWidth = 2.dp)
                     } else {
-                        Icon(if (isRecording) Icons.Filled.Stop else Icons.Filled.Mic, contentDescription = "Mic", tint = Color.White, modifier = Modifier.size(24.dp))
+                        IconButton(
+                            onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                            modifier = Modifier.padding(end = 4.dp), enabled = !isRecording
+                        ) { Icon(imageVector = Icons.Default.Add, contentDescription = "Send Image", tint = Color.Gray) }
+                    }
+
+                    Surface(
+                        modifier = Modifier.weight(1f).height(56.dp),
+                        shape = RoundedCornerShape(
+                            topStart = if (messageToReply != null) 0.dp else 50.dp,
+                            topEnd = if (messageToReply != null) 0.dp else 50.dp,
+                            bottomStart = 50.dp,
+                            bottomEnd = 50.dp
+                        ),
+                        color = Color.White
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 20.dp)) {
+                            BasicTextField(
+                                value = messageText, onValueChange = { messageText = it },
+                                textStyle = TextStyle(color = Color.Black, fontSize = 16.sp),
+                                cursorBrush = SolidColor(Color.Black),
+                                modifier = Modifier.weight(1f), enabled = !isRecording,
+                                decorationBox = { innerTextField ->
+                                    if (messageText.isEmpty()) {
+                                        Text(if (isRecording) "Recording..." else "Ask anything here..", color = if (isRecording) Color.Red else Color.Gray, fontSize = 16.sp)
+                                    }
+                                    innerTextField()
+                                }
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp).clip(CircleShape)
+                            .background(if (isRecording) Color.Red else SenderBubbleColor)
+                            .clickable {
+                                if (messageText.isNotBlank()) {
+                                    val newMessage = ChatMessage(
+                                        text = messageText,
+                                        senderId = currentUserId,
+                                        timestamp = System.currentTimeMillis(),
+                                        replyToMessageId = messageToReply?.id ?: "",
+                                        replyToMessageText = messageToReply?.text?.takeIf { it.isNotBlank() } ?: if (messageToReply?.imageUrl?.isNotEmpty() == true) "Photo" else if (messageToReply?.audioUrl?.isNotEmpty() == true) "Voice Note" else "",
+                                        replyToSenderName = if (messageToReply != null) (if (messageToReply!!.senderId == currentUserId) currentUserName else receiverName) else ""
+                                    )
+                                    db.collection("ChatRooms").document(roomId).collection("Messages").add(newMessage)
+
+                                    messageText = ""
+                                    messageToReply = null
+                                    db.collection("ChatRooms").document(roomId).set(
+                                        mapOf("typing_$currentUserId" to false), SetOptions.merge()
+                                    )
+                                } else {
+                                    val hasMicPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                                    if (!hasMicPermission) audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                    else if (isRecording) stopAndSendRecording() else startRecording()
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (messageText.isNotBlank()) {
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(24.dp))
+                        } else {
+                            Icon(if (isRecording) Icons.Filled.Stop else Icons.Filled.Mic, contentDescription = "Mic", tint = Color.White, modifier = Modifier.size(24.dp))
+                        }
                     }
                 }
             }
@@ -395,7 +481,7 @@ fun ChatScreen(
 
         if (heartAnimationTrigger > 0) FloatingHeartsOverlay(key = heartAnimationTrigger)
 
-        // --- DIALOG HAPUS PESAN ---
+
         if (messageToDelete != null) {
             AlertDialog(
                 onDismissRequest = { messageToDelete = null },
@@ -428,14 +514,37 @@ fun MessageBubbleUI(
     message: ChatMessage, isMine: Boolean, profilePic: String,
     senderName: String, roomId: String,
     onLikeClick: (Boolean) -> Unit,
-    onDeleteClick: (ChatMessage) -> Unit
+    onDeleteClick: (ChatMessage) -> Unit,
+    onReplyClick: (ChatMessage) -> Unit
 ) {
     var localIsLiked by remember(message.liked) { mutableStateOf(message.liked) }
     val timeString = remember(message.timestamp) { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)) }
     val textColor = if (isMine) Color.White else Color.Black
 
+
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    val animatedOffsetX by animateFloatAsState(targetValue = offsetX, animationSpec = tween(150), label = "drag")
+
     Column(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp)
+            .offset { IntOffset(animatedOffsetX.roundToInt(), 0) }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        if (offsetX > 80f) {
+                            onReplyClick(message)
+                        }
+                        offsetX = 0f
+                    },
+                    onDragCancel = { offsetX = 0f }
+                ) { change, dragAmount ->
+                    change.consume()
+
+                    offsetX = (offsetX + dragAmount).coerceIn(0f, 150f)
+                }
+            },
         horizontalAlignment = if (isMine) Alignment.End else Alignment.Start
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 6.dp)) {
@@ -479,6 +588,31 @@ fun MessageBubbleUI(
                     }
             ) {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+
+
+                    if (message.replyToMessageText.isNotEmpty()) {
+                        Surface(
+                            color = if (isMine) Color(0xFF444444) else Color(0xFFF0F0F0),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text(
+                                    text = message.replyToSenderName,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = if (isMine) Color.White else Color.Black
+                                )
+                                Text(
+                                    text = message.replyToMessageText,
+                                    fontSize = 11.sp,
+                                    color = if (isMine) Color.LightGray else Color.DarkGray,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+
                     if (message.imageUrl.isNotEmpty()) {
                         AsyncImage(
                             model = message.imageUrl, contentDescription = "Image",

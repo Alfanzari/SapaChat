@@ -43,7 +43,7 @@ import com.google.firebase.firestore.Query
 import java.text.SimpleDateFormat
 import java.util.*
 
-// Model Data Postingan
+
 data class FeedPost(
     val id: String = "",
     val authorId: String = "",
@@ -56,7 +56,7 @@ data class FeedPost(
     val commentCount: Int = 0
 )
 
-// Model Data Komentar
+
 data class PostComment(
     val id: String = "",
     val authorId: String = "",
@@ -87,13 +87,13 @@ fun FeedScreen(
     var posts by remember { mutableStateOf<List<FeedPost>>(emptyList()) }
     var isLoadingFeed by remember { mutableStateOf(true) }
 
-    // State Bottom Sheet Post
+
     var showCreatePostSheet by remember { mutableStateOf(false) }
     var newPostText by remember { mutableStateOf("") }
     var selectedImageUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var isPublishing by remember { mutableStateOf(false) }
 
-    // State Bottom Sheet Comment
+
     var activeCommentPostId by remember { mutableStateOf<String?>(null) }
     var comments by remember { mutableStateOf<List<PostComment>>(emptyList()) }
     var newCommentText by remember { mutableStateOf("") }
@@ -109,7 +109,7 @@ fun FeedScreen(
         }
     }
 
-    // Ambil Data Profil
+
     LaunchedEffect(currentUserId) {
         db.collection("Users").document(currentUserId).get().addOnSuccessListener { doc ->
             val fName = doc.getString("firstName") ?: ""
@@ -120,7 +120,7 @@ fun FeedScreen(
         }
     }
 
-    // Ambil Feed
+
     LaunchedEffect(Unit) {
         db.collection("FeedPosts")
             .orderBy("timestamp", Query.Direction.DESCENDING)
@@ -134,7 +134,7 @@ fun FeedScreen(
             }
     }
 
-    // Ambil Komentar
+
     LaunchedEffect(activeCommentPostId) {
         if (activeCommentPostId != null) {
             db.collection("FeedPosts").document(activeCommentPostId!!).collection("Comments")
@@ -163,7 +163,7 @@ fun FeedScreen(
                 IconButton(onClick = onNavigateToSettings) { Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = Color.Gray, modifier = Modifier.size(28.dp)) }
             }
         },
-        // FAB berbentuk kotak hitam ala referensi
+
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showCreatePostSheet = true },
@@ -174,11 +174,11 @@ fun FeedScreen(
                 Icon(Icons.Filled.Add, contentDescription = "Buat Post")
             }
         },
-        containerColor = Color.White // Latar belakang putih bersih
+        containerColor = Color.White
     ) { paddingValues ->
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
 
-            // Header Feed ala referensi (Home, Welcome, dan Ikon Pengaturan)
+
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp).statusBarsPadding(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -189,7 +189,7 @@ fun FeedScreen(
                     Text(text = "Welcome $currentUserName \uD83D\uDC4B", fontSize = 14.sp, color = Color.Gray)
                 }
 
-                // Ikon bulat di kanan atas
+
                 IconButton(
                     onClick = onNavigateToSettings,
                     modifier = Modifier.size(48.dp).border(1.dp, Color(0xFFE5E5E5), RoundedCornerShape(14.dp))
@@ -205,7 +205,7 @@ fun FeedScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 80.dp) // Jarak ekstra agar tidak tertutup FAB
+                    contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
                     if (posts.isEmpty()) {
                         item {
@@ -246,7 +246,7 @@ fun FeedScreen(
         }
     }
 
-    // --- BOTTOM SHEET: BUAT POSTINGAN ---
+
     if (showCreatePostSheet) {
         ModalBottomSheet(onDismissRequest = { showCreatePostSheet = false }, sheetState = createPostSheetState, containerColor = Color.White) {
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp).fillMaxHeight(0.85f)) {
@@ -328,7 +328,7 @@ fun FeedScreen(
         }
     }
 
-    // --- BOTTOM SHEET: KOMENTAR ---
+
     if (activeCommentPostId != null) {
         ModalBottomSheet(onDismissRequest = { activeCommentPostId = null }, sheetState = commentSheetState, containerColor = Color.White) {
             Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.85f)) {
@@ -391,7 +391,7 @@ fun FeedScreen(
     }
 }
 
-// Kartu Postingan Minimalis ala Referensi (Outlined, Text Overlay pada Gambar)
+
 @Composable
 fun MinimalistPostItem(post: FeedPost, currentUserId: String, onLikeClick: () -> Unit, onCommentClick: () -> Unit, onShareClick: () -> Unit, onDeleteClick: () -> Unit) {
     val isLikedByMe = currentUserId in post.likes
@@ -401,10 +401,10 @@ fun MinimalistPostItem(post: FeedPost, currentUserId: String, onLikeClick: () ->
         modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 10.dp),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, Color(0xFFF0F0F0)) // Border luar tipis
+        border = BorderStroke(1.dp, Color(0xFFF0F0F0))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Header (Avatar dengan titik merah/hijau, Nama, Info waktu)
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box {
                     Box(modifier = Modifier.size(40.dp).clip(CircleShape).background(Color(0xFFE0E0E0)), contentAlignment = Alignment.Center) {
@@ -414,7 +414,7 @@ fun MinimalistPostItem(post: FeedPost, currentUserId: String, onLikeClick: () ->
                             Text(post.authorName.take(1).uppercase(), color = Color.DarkGray, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         }
                     }
-                    // Titik indikator ala referensi
+
                     Box(modifier = Modifier.size(10.dp).align(Alignment.BottomEnd).background(Color(0xFFE57373), CircleShape).border(1.dp, Color.White, CircleShape))
                 }
                 Spacer(modifier = Modifier.width(12.dp))
@@ -437,7 +437,7 @@ fun MinimalistPostItem(post: FeedPost, currentUserId: String, onLikeClick: () ->
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Body: Jika ada gambar, tampilkan gambar dengan teks yang di-overlay di bawahnya
+
             if (post.imageUrl.isNotEmpty()) {
                 Box(modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(16.dp))) {
                     AsyncImage(
@@ -445,7 +445,7 @@ fun MinimalistPostItem(post: FeedPost, currentUserId: String, onLikeClick: () ->
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
-                    // Gradien hitam transparan dari bawah agar teks terbaca
+
                     Box(
                         modifier = Modifier.fillMaxSize().background(
                             Brush.verticalGradient(
@@ -454,7 +454,7 @@ fun MinimalistPostItem(post: FeedPost, currentUserId: String, onLikeClick: () ->
                             )
                         )
                     )
-                    // Teks Postingan di-overlay di atas gambar (maks 3 baris)
+
                     if (post.text.isNotBlank()) {
                         Text(
                             text = post.text,
@@ -468,7 +468,7 @@ fun MinimalistPostItem(post: FeedPost, currentUserId: String, onLikeClick: () ->
                     }
                 }
             } else {
-                // Jika tidak ada gambar, teks tampil biasa
+
                 if (post.text.isNotBlank()) {
                     Text(text = post.text, fontSize = 15.sp, color = Color.Black)
                 }
@@ -476,7 +476,7 @@ fun MinimalistPostItem(post: FeedPost, currentUserId: String, onLikeClick: () ->
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Footer: Ikon bergaris (Outlined) ala referensi
+
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { onLikeClick() }.padding(end = 16.dp)) {
                     Icon(imageVector = if (isLikedByMe) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder, contentDescription = "Like", tint = if (isLikedByMe) Color(0xFFFF5252) else Color.Gray, modifier = Modifier.size(18.dp))
@@ -491,7 +491,7 @@ fun MinimalistPostItem(post: FeedPost, currentUserId: String, onLikeClick: () ->
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Ikon Share di pojok kanan bawah
+
                 IconButton(onClick = onShareClick, modifier = Modifier.size(24.dp)) {
                     Icon(Icons.Outlined.Send, contentDescription = "Share", tint = Color.Gray, modifier = Modifier.size(18.dp))
                 }

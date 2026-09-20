@@ -15,7 +15,7 @@ import kotlin.random.Random
 
 class MyFirebaseMessagingService : FirebaseMessagingService() {
 
-    // Fungsi ini dipanggil saat token perangkat berubah/baru diinstal
+
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         val userId = FirebaseAuth.getInstance().currentUser?.uid
@@ -25,7 +25,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 
-    // Fungsi ini dipanggil saat notifikasi masuk
+
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         super.onMessageReceived(remoteMessage)
 
@@ -47,7 +47,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
         val channelId = "sapachat_notif_channel"
         val notificationBuilder = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(android.R.drawable.ic_dialog_info) // Ganti dengan ikon aplikasimu nanti
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
             .setContentText(message)
             .setAutoCancel(true)
@@ -56,7 +56,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        // Untuk Android 8.0 ke atas, wajib membuat Notification Channel
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,

@@ -34,7 +34,7 @@ fun RegisterScreen(onNavigateToLogin: () -> Unit) {
 
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5))) {
 
-        YellowChatHeader() // Meminjam komponen header dari file LoginScreen.kt
+        YellowChatHeader()
 
         Column(
             modifier = Modifier

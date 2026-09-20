@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 
-// Membuat struktur data untuk memudahkan pembacaan status User
+
 data class UserProfile(
     val uid: String,
     val email: String,
@@ -40,7 +40,6 @@ fun AdminHomeScreen(
 
     var users by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
 
-    // Mengambil data pengguna secara real-time
     LaunchedEffect(Unit) {
         db.collection("Users")
             .whereEqualTo("role", "User")
@@ -49,7 +48,7 @@ fun AdminHomeScreen(
                     val userList = snapshot.documents.mapNotNull { doc ->
                         val uid = doc.getString("uid")
                         val email = doc.getString("email")
-                        val isBanned = doc.getBoolean("isBanned") ?: false // Default false jika belum ada
+                        val isBanned = doc.getBoolean("isBanned") ?: false
 
                         if (uid != null && email != null) {
                             UserProfile(uid, email, isBanned)
@@ -103,10 +102,10 @@ fun AdminHomeScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .clickable { onNavigateToChat(user.uid, user.email) }, // Ketuk kartu untuk chat
+                            .clickable { onNavigateToChat(user.uid, user.email) },
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (user.isBanned) Color(0xFFFFEBEE) else MaterialTheme.colorScheme.surface // Warna merah muda jika diblokir
+                            containerColor = if (user.isBanned) Color(0xFFFFEBEE) else MaterialTheme.colorScheme.surface
                         )
                     ) {
                         Row(
@@ -148,7 +147,7 @@ fun AdminHomeScreen(
                                 }
                             }
 
-                            // Tombol Banned / Unbanned
+
                             IconButton(
                                 onClick = {
                                     val newStatus = !user.isBanned

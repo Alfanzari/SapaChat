@@ -18,8 +18,6 @@ import androidx.navigation.compose.rememberNavController
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.messaging.FirebaseMessaging
-
-// Import layar-layar yang ada di aplikasi SapaChat
 import com.syauqialfanzari0008.sapachat.ui.login.WelcomeScreen
 import com.syauqialfanzari0008.sapachat.ui.login.LoginScreen
 import com.syauqialfanzari0008.sapachat.ui.login.RegisterScreen
@@ -32,7 +30,7 @@ import com.syauqialfanzari0008.sapachat.ui.login.FeedScreen
 
 class MainActivity : ComponentActivity() {
 
-    // Launcher untuk meminta izin notifikasi Android 13+
+
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
@@ -45,20 +43,20 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Minta Izin Notifikasi
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
 
-        // Inisialisasi Cloudinary
+
         val config = HashMap<String, String>()
         config["cloud_name"] = "b5nyzswj"
         try {
             com.cloudinary.android.MediaManager.init(this, config)
         } catch (e: Exception) {
-            // Mencegah error jika terinisialisasi ulang
+
         }
 
         setContent {
@@ -73,7 +71,7 @@ fun SapaChatNavigation() {
     val auth = FirebaseAuth.getInstance()
     val db = FirebaseFirestore.getInstance()
 
-    // Mendapatkan dan menyimpan Token FCM saat aplikasi dibuka
+
     LaunchedEffect(auth.currentUser) {
         val userId = auth.currentUser?.uid
         if (userId != null) {

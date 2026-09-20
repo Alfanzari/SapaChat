@@ -46,7 +46,7 @@ fun SettingsScreen(
     var lastName by remember { mutableStateOf("") }
     var profileImageUrl by remember { mutableStateOf("") }
 
-    // State untuk memunculkan Pop-up Dialog
+
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
 
@@ -172,13 +172,13 @@ fun SettingsScreen(
                 border = BorderStroke(1.dp, Color(0xFFE0E0E0))
             ) {
                 Column {
-                    // 1. Tombol Language
+
                     SettingsMenuItem(title = "Language") {
                         showLanguageDialog = true
                     }
                     HorizontalDivider(color = Color(0xFFE0E0E0), thickness = 1.dp)
 
-                    // 2. Tombol Notifications
+
                     SettingsMenuItem(title = "Notifications") {
                         val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                             putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
@@ -187,13 +187,13 @@ fun SettingsScreen(
                     }
                     HorizontalDivider(color = Color(0xFFE0E0E0), thickness = 1.dp)
 
-                    // 3. Tombol Privacy (Ubah dari Settings)
+
                     SettingsMenuItem(title = "Privacy") {
                         showPrivacyDialog = true
                     }
                     HorizontalDivider(color = Color(0xFFE0E0E0), thickness = 1.dp)
 
-                    // 4. Tombol Support
+
                     SettingsMenuItem(title = "Support") {
                         val intent = Intent(Intent.ACTION_SENDTO).apply {
                             data = Uri.parse("mailto:support@sapachat.com")
@@ -225,7 +225,7 @@ fun SettingsScreen(
             }
         }
 
-        // --- Dialog Language ---
+
         if (showLanguageDialog) {
             AlertDialog(
                 onDismissRequest = { showLanguageDialog = false },
@@ -238,7 +238,7 @@ fun SettingsScreen(
             )
         }
 
-        // --- Dialog Privacy ---
+
         if (showPrivacyDialog) {
             AlertDialog(
                 onDismissRequest = { showPrivacyDialog = false },
@@ -253,7 +253,7 @@ fun SettingsScreen(
     }
 }
 
-// Fungsi ini sudah saya ubah agar menerima aksi klik (onClick)
+
 @Composable
 fun SettingsMenuItem(title: String, onClick: () -> Unit) {
     Row(

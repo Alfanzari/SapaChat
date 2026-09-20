@@ -41,7 +41,7 @@ fun LoginScreen(
 
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5))) {
 
-        YellowChatHeader() // Memanggil header kuning
+        YellowChatHeader()
 
         Column(
             modifier = Modifier
@@ -161,7 +161,7 @@ fun LoginScreen(
     }
 }
 
-// --- KOMPONEN HEADER KUNING (JANGAN DIHAPUS, DIPAKAI OLEH REGISTER JUGA) ---
+
 @Composable
 fun YellowChatHeader() {
     Box(modifier = Modifier.fillMaxWidth().height(280.dp).background(Color(0xFFFCD557))) {

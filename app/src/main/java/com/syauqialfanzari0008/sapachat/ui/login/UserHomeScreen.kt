@@ -29,14 +29,14 @@ import com.google.firebase.firestore.Query
 import java.text.SimpleDateFormat
 import java.util.*
 
-// Model data ChatUser (Ditambah variabel username)
+
 data class ChatUser(
     val uid: String,
     val email: String,
     val firstName: String,
     val lastName: String,
     val profileImageUrl: String,
-    val username: String = "" // <-- Persiapan untuk fitur @username
+    val username: String = ""
 ) {
     val displayName: String
         get() = if (firstName.isNotEmpty() || lastName.isNotEmpty()) {
@@ -103,7 +103,7 @@ fun UserHomeScreen(
                             firstName = doc.getString("firstName") ?: "",
                             lastName = doc.getString("lastName") ?: "",
                             profileImageUrl = doc.getString("profileImageUrl") ?: "",
-                            username = doc.getString("username") ?: "" // <-- Mengambil username dari Firestore
+                            username = doc.getString("username") ?: ""
                         )
                     }
                     allUsersList = fetchedUsers
@@ -119,7 +119,7 @@ fun UserHomeScreen(
 
     val suggestedList = allUsersList
         .filter { it.uid !in myFriendsUids }
-        // Fitur pencarian sekarang bisa mendeteksi nama asli ATAU username unik
+
         .filter { it.displayName.contains(sheetSearchQuery, ignoreCase = true) || it.username.contains(sheetSearchQuery, ignoreCase = true) }
 
     Scaffold(
@@ -258,7 +258,7 @@ fun UserHomeScreen(
     }
 }
 
-// UBAH: Sekarang menampikan Email atau @Username di bawah nama
+
 @Composable
 fun SuggestedUserItem(user: ChatUser, onClick: () -> Unit) {
     Row(
@@ -281,7 +281,7 @@ fun SuggestedUserItem(user: ChatUser, onClick: () -> Unit) {
             Text(text = user.displayName, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
             Spacer(modifier = Modifier.height(2.dp))
 
-            // Logika: Jika user punya username, tampilkan @username. Jika kosong, tampilkan email.
+
             val subText = if (user.username.isNotEmpty()) "@${user.username}" else user.email
             Text(text = subText, fontSize = 13.sp, color = Color.Gray)
         }

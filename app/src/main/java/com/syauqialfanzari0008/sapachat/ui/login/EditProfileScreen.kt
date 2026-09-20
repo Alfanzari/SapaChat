@@ -36,11 +36,11 @@ fun EditProfileScreen(
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
     var dateOfBirth by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf("") } // Penambahan state username
+    var username by remember { mutableStateOf("") }
     var email by remember { mutableStateOf(currentUser?.email ?: "") }
     var profileImageUrl by remember { mutableStateOf("") }
 
-    // Membaca dari koleksi "Users" (U besar)
+
     LaunchedEffect(Unit) {
         if (currentUser != null) {
             FirebaseFirestore.getInstance().collection("Users").document(currentUser.uid)
@@ -50,7 +50,7 @@ fun EditProfileScreen(
                         firstName = document.getString("firstName") ?: ""
                         lastName = document.getString("lastName") ?: ""
                         dateOfBirth = document.getString("dateOfBirth") ?: ""
-                        username = document.getString("username") ?: "" // Membaca username dari database
+                        username = document.getString("username") ?: ""
                         profileImageUrl = document.getString("profileImageUrl") ?: ""
                     }
                 }
@@ -183,7 +183,7 @@ fun EditProfileScreen(
             ProfileTextField(
                 label = "Username",
                 value = username,
-                onValueChange = { username = it } // Kolom input untuk Username
+                onValueChange = { username = it }
             )
 
             Spacer(modifier = Modifier.height(16.dp))
