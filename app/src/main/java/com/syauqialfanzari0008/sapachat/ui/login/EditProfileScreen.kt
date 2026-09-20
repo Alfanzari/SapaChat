@@ -29,13 +29,14 @@ import com.google.firebase.firestore.FirebaseFirestore
 @Composable
 fun EditProfileScreen(
     onNavigateBack: () -> Unit,
-    onSaveProfile: (firstName: String, lastName: String, dob: String, email: String, newImageUri: Uri?) -> Unit
+    onSaveProfile: (firstName: String, lastName: String, dob: String, username: String, email: String, newImageUri: Uri?) -> Unit
 ) {
     val currentUser = FirebaseAuth.getInstance().currentUser
 
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
     var dateOfBirth by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") } // Penambahan state username
     var email by remember { mutableStateOf(currentUser?.email ?: "") }
     var profileImageUrl by remember { mutableStateOf("") }
 
@@ -49,6 +50,7 @@ fun EditProfileScreen(
                         firstName = document.getString("firstName") ?: ""
                         lastName = document.getString("lastName") ?: ""
                         dateOfBirth = document.getString("dateOfBirth") ?: ""
+                        username = document.getString("username") ?: "" // Membaca username dari database
                         profileImageUrl = document.getString("profileImageUrl") ?: ""
                     }
                 }
@@ -178,6 +180,14 @@ fun EditProfileScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            ProfileTextField(
+                label = "Username",
+                value = username,
+                onValueChange = { username = it } // Kolom input untuk Username
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "Email",
@@ -204,7 +214,7 @@ fun EditProfileScreen(
             Spacer(modifier = Modifier.height(32.dp))
 
             Button(
-                onClick = { onSaveProfile(firstName, lastName, dateOfBirth, email, imageUri) },
+                onClick = { onSaveProfile(firstName, lastName, dateOfBirth, username, email, imageUri) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),

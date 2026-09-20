@@ -29,13 +29,14 @@ import com.google.firebase.firestore.Query
 import java.text.SimpleDateFormat
 import java.util.*
 
-// Model data ChatUser
+// Model data ChatUser (Ditambah variabel username)
 data class ChatUser(
     val uid: String,
     val email: String,
     val firstName: String,
     val lastName: String,
-    val profileImageUrl: String
+    val profileImageUrl: String,
+    val username: String = "" // <-- Persiapan untuk fitur @username
 ) {
     val displayName: String
         get() = if (firstName.isNotEmpty() || lastName.isNotEmpty()) {
@@ -48,18 +49,18 @@ data class ChatUser(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UserHomeScreen(
+    onNavigateToFeed: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToChat: (uid: String, email: String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
 
-    // State untuk daftar semua user dan daftar teman
     var allUsersList by remember { mutableStateOf<List<ChatUser>>(emptyList()) }
     var myFriendsUids by remember { mutableStateOf<List<String>>(emptyList()) }
-
     var isLoading by remember { mutableStateOf(true) }
 
-    // State untuk Bottom Sheet (New Message)
+    val lastMessageTimestamps = remember { mutableStateMapOf<String, Long>() }
+
     var showNewMessageSheet by remember { mutableStateOf(false) }
     var sheetSearchQuery by remember { mutableStateOf("") }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -68,7 +69,6 @@ fun UserHomeScreen(
     val db = FirebaseFirestore.getInstance()
     val currentUserId = auth.currentUser?.uid ?: ""
 
-    // 1. Update status Online dan Dengarkan daftar teman (friends array) secara Real-Time
     DisposableEffect(Unit) {
         var listener: com.google.firebase.firestore.ListenerRegistration? = null
         if (currentUserId.isNotEmpty()) {
@@ -88,7 +88,6 @@ fun UserHomeScreen(
         }
     }
 
-    // 2. Mengambil SEMUA pengguna untuk dipisah ke Beranda dan Suggested (Sheet)
     LaunchedEffect(Unit) {
         db.collection("Users").whereEqualTo("role", "User")
             .addSnapshotListener { result, _ ->
@@ -103,7 +102,8 @@ fun UserHomeScreen(
                             email = email,
                             firstName = doc.getString("firstName") ?: "",
                             lastName = doc.getString("lastName") ?: "",
-                            profileImageUrl = doc.getString("profileImageUrl") ?: ""
+                            profileImageUrl = doc.getString("profileImageUrl") ?: "",
+                            username = doc.getString("username") ?: "" // <-- Mengambil username dari Firestore
                         )
                     }
                     allUsersList = fetchedUsers
@@ -112,15 +112,15 @@ fun UserHomeScreen(
             }
     }
 
-    // Filter list untuk Beranda (Hanya teman)
     val friendsList = allUsersList
         .filter { it.uid in myFriendsUids }
         .filter { it.displayName.contains(searchQuery, ignoreCase = true) }
+        .sortedByDescending { lastMessageTimestamps[it.uid] ?: 0L }
 
-    // Filter list untuk Suggested di Bottom Sheet (Bukan teman)
     val suggestedList = allUsersList
         .filter { it.uid !in myFriendsUids }
-        .filter { it.displayName.contains(sheetSearchQuery, ignoreCase = true) }
+        // Fitur pencarian sekarang bisa mendeteksi nama asli ATAU username unik
+        .filter { it.displayName.contains(sheetSearchQuery, ignoreCase = true) || it.username.contains(sheetSearchQuery, ignoreCase = true) }
 
     Scaffold(
         bottomBar = {
@@ -133,7 +133,7 @@ fun UserHomeScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = { }) { Icon(Icons.Filled.ChatBubble, contentDescription = "Chats", tint = Color.Black, modifier = Modifier.size(28.dp)) }
-                IconButton(onClick = { }) { Icon(Icons.Filled.ViewAgenda, contentDescription = "Feed", tint = Color.Gray, modifier = Modifier.size(28.dp)) }
+                IconButton(onClick = onNavigateToFeed) { Icon(Icons.Filled.ViewAgenda, contentDescription = "Feed", tint = Color.Gray, modifier = Modifier.size(28.dp)) }
                 IconButton(onClick = onNavigateToSettings) { Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = Color.Gray, modifier = Modifier.size(28.dp)) }
             }
         },
@@ -145,7 +145,6 @@ fun UserHomeScreen(
                 .padding(paddingValues)
                 .background(Color.White)
         ) {
-            // Header Beranda
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -154,13 +153,11 @@ fun UserHomeScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(text = "Messages", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                // Tombol Buka Sheet Pencarian Teman Baru
                 IconButton(onClick = { showNewMessageSheet = true }) {
                     Icon(imageVector = Icons.Outlined.Edit, contentDescription = "New Message", tint = Color.Gray, modifier = Modifier.size(28.dp))
                 }
             }
 
-            // Search Bar Beranda
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
@@ -177,7 +174,6 @@ fun UserHomeScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Daftar Teman di Beranda
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color.Black) }
             } else if (friendsList.isEmpty()) {
@@ -186,8 +182,15 @@ fun UserHomeScreen(
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(friendsList) { user ->
-                        ChatListItem(user = user, currentUserId = currentUserId, onClick = { onNavigateToChat(user.uid, user.email) })
+                    items(friendsList, key = { it.uid }) { user ->
+                        ChatListItem(
+                            user = user,
+                            currentUserId = currentUserId,
+                            onClick = { onNavigateToChat(user.uid, user.email) },
+                            onTimestampUpdate = { timestamp ->
+                                lastMessageTimestamps[user.uid] = timestamp
+                            }
+                        )
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp), thickness = 1.dp, color = Color(0xFFF0F0F0))
                     }
                 }
@@ -195,7 +198,6 @@ fun UserHomeScreen(
         }
     }
 
-    // Tampilan Bottom Sheet mirip referensi image_f6d3a0.png
     if (showNewMessageSheet) {
         ModalBottomSheet(
             onDismissRequest = { showNewMessageSheet = false },
@@ -222,7 +224,7 @@ fun UserHomeScreen(
                 OutlinedTextField(
                     value = sheetSearchQuery,
                     onValueChange = { sheetSearchQuery = it },
-                    placeholder = { Text("To", color = Color.Gray) },
+                    placeholder = { Text("Search name or @username...", color = Color.Gray) },
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -240,11 +242,8 @@ fun UserHomeScreen(
                 LazyColumn(modifier = Modifier.fillMaxWidth()) {
                     items(suggestedList) { user ->
                         SuggestedUserItem(user = user) {
-                            // Tambahkan ke daftar teman diri sendiri
                             db.collection("Users").document(currentUserId)
                                 .update("friends", FieldValue.arrayUnion(user.uid))
-
-                            // (Opsional) Langsung jadikan teman sebaliknya juga
                             db.collection("Users").document(user.uid)
                                 .update("friends", FieldValue.arrayUnion(currentUserId))
 
@@ -259,7 +258,7 @@ fun UserHomeScreen(
     }
 }
 
-// Komponen Item untuk Daftar Suggested di Bottom Sheet
+// UBAH: Sekarang menampikan Email atau @Username di bawah nama
 @Composable
 fun SuggestedUserItem(user: ChatUser, onClick: () -> Unit) {
     Row(
@@ -277,13 +276,25 @@ fun SuggestedUserItem(user: ChatUser, onClick: () -> Unit) {
             }
         }
         Spacer(modifier = Modifier.width(16.dp))
-        Text(text = user.displayName, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = user.displayName, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
+            Spacer(modifier = Modifier.height(2.dp))
+
+            // Logika: Jika user punya username, tampilkan @username. Jika kosong, tampilkan email.
+            val subText = if (user.username.isNotEmpty()) "@${user.username}" else user.email
+            Text(text = subText, fontSize = 13.sp, color = Color.Gray)
+        }
     }
 }
 
-// Komponen Item Chat Beranda (Dengan perbaikan deteksi Voice Note)
 @Composable
-fun ChatListItem(user: ChatUser, currentUserId: String, onClick: () -> Unit) {
+fun ChatListItem(
+    user: ChatUser,
+    currentUserId: String,
+    onClick: () -> Unit,
+    onTimestampUpdate: (Long) -> Unit
+) {
     var lastMessageText by remember { mutableStateOf("Tap to start chatting...") }
     var lastMessageTime by remember { mutableStateOf("Now") }
     var isNewMessage by remember { mutableStateOf(false) }
@@ -299,11 +310,10 @@ fun ChatListItem(user: ChatUser, currentUserId: String, onClick: () -> Unit) {
                     val doc = snapshot.documents[0]
                     val text = doc.getString("text") ?: ""
                     val imageUrl = doc.getString("imageUrl") ?: ""
-                    val audioUrl = doc.getString("audioUrl") ?: "" // Tarik data audioUrl dari database
+                    val audioUrl = doc.getString("audioUrl") ?: ""
                     val senderId = doc.getString("senderId") ?: ""
                     val timestamp = doc.getLong("timestamp") ?: 0L
 
-                    // Update logika pengecekan pesan terakhir
                     lastMessageText = when {
                         text.isNotBlank() -> text
                         audioUrl.isNotBlank() -> "🎤 Voice Note"
@@ -314,12 +324,14 @@ fun ChatListItem(user: ChatUser, currentUserId: String, onClick: () -> Unit) {
                     if (timestamp > 0L) {
                         val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
                         lastMessageTime = sdf.format(Date(timestamp))
+                        onTimestampUpdate(timestamp)
                     }
                     isNewMessage = senderId != currentUserId
                 } else {
                     lastMessageText = "Tap to start chatting..."
                     lastMessageTime = "Now"
                     isNewMessage = false
+                    onTimestampUpdate(0L)
                 }
             }
     }

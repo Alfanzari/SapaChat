@@ -1,5 +1,9 @@
 package com.syauqialfanzari0008.sapachat.ui.login
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,9 +34,11 @@ import com.google.firebase.firestore.FirebaseFirestore
 @Composable
 fun SettingsScreen(
     onNavigateToHome: () -> Unit,
+    onNavigateToFeed: () -> Unit,
     onNavigateToEditProfile: () -> Unit,
     onLogout: () -> Unit
 ) {
+    val context = LocalContext.current
     val auth = FirebaseAuth.getInstance()
     val currentUser = auth.currentUser
 
@@ -39,7 +46,10 @@ fun SettingsScreen(
     var lastName by remember { mutableStateOf("") }
     var profileImageUrl by remember { mutableStateOf("") }
 
-    // Membaca dari koleksi "Users" (U besar)
+    // State untuk memunculkan Pop-up Dialog
+    var showLanguageDialog by remember { mutableStateOf(false) }
+    var showPrivacyDialog by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         if (currentUser != null) {
             FirebaseFirestore.getInstance().collection("Users").document(currentUser.uid)
@@ -73,7 +83,7 @@ fun SettingsScreen(
                 IconButton(onClick = onNavigateToHome) {
                     Icon(Icons.Filled.ChatBubble, contentDescription = "Chats", tint = Color.Gray, modifier = Modifier.size(28.dp))
                 }
-                IconButton(onClick = { }) {
+                IconButton(onClick = onNavigateToFeed) {
                     Icon(Icons.Filled.ViewAgenda, contentDescription = "Feed", tint = Color.Gray, modifier = Modifier.size(28.dp))
                 }
                 IconButton(onClick = { }) {
@@ -162,13 +172,39 @@ fun SettingsScreen(
                 border = BorderStroke(1.dp, Color(0xFFE0E0E0))
             ) {
                 Column {
-                    SettingsMenuItem(title = "Language")
+                    // 1. Tombol Language
+                    SettingsMenuItem(title = "Language") {
+                        showLanguageDialog = true
+                    }
                     HorizontalDivider(color = Color(0xFFE0E0E0), thickness = 1.dp)
-                    SettingsMenuItem(title = "Notifications")
+
+                    // 2. Tombol Notifications
+                    SettingsMenuItem(title = "Notifications") {
+                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        }
+                        context.startActivity(intent)
+                    }
                     HorizontalDivider(color = Color(0xFFE0E0E0), thickness = 1.dp)
-                    SettingsMenuItem(title = "Settings")
+
+                    // 3. Tombol Privacy (Ubah dari Settings)
+                    SettingsMenuItem(title = "Privacy") {
+                        showPrivacyDialog = true
+                    }
                     HorizontalDivider(color = Color(0xFFE0E0E0), thickness = 1.dp)
-                    SettingsMenuItem(title = "Support")
+
+                    // 4. Tombol Support
+                    SettingsMenuItem(title = "Support") {
+                        val intent = Intent(Intent.ACTION_SENDTO).apply {
+                            data = Uri.parse("mailto:support@sapachat.com")
+                            putExtra(Intent.EXTRA_SUBJECT, "Bantuan SapaChat")
+                        }
+                        try {
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Tidak ada aplikasi email yang terpasang", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             }
 
@@ -188,15 +224,42 @@ fun SettingsScreen(
                 Text(text = "Sign out", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
         }
+
+        // --- Dialog Language ---
+        if (showLanguageDialog) {
+            AlertDialog(
+                onDismissRequest = { showLanguageDialog = false },
+                title = { Text("Language", fontWeight = FontWeight.Bold) },
+                text = { Text("Fitur ganti bahasa akan segera hadir pada pembaruan SapaChat berikutnya!") },
+                confirmButton = {
+                    TextButton(onClick = { showLanguageDialog = false }) { Text("Oke", color = Color.Black) }
+                },
+                containerColor = Color.White
+            )
+        }
+
+        // --- Dialog Privacy ---
+        if (showPrivacyDialog) {
+            AlertDialog(
+                onDismissRequest = { showPrivacyDialog = false },
+                title = { Text("Privacy Policy", fontWeight = FontWeight.Bold) },
+                text = { Text("SapaChat sangat menjaga kerahasiaan data Anda. Segala bentuk pertukaran pesan yang dikirim dan diterima hanya dapat diakses oleh Anda dan lawan bicara Anda.") },
+                confirmButton = {
+                    TextButton(onClick = { showPrivacyDialog = false }) { Text("Tutup", color = Color.Black) }
+                },
+                containerColor = Color.White
+            )
+        }
     }
 }
 
+// Fungsi ini sudah saya ubah agar menerima aksi klik (onClick)
 @Composable
-fun SettingsMenuItem(title: String) {
+fun SettingsMenuItem(title: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { }
+            .clickable { onClick() }
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween

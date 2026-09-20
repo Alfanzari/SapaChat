@@ -12,12 +12,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -30,8 +32,11 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,6 +45,7 @@ import coil.compose.AsyncImage
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -47,12 +53,12 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.random.Random
 
-// Model Data Pesan - Ditambahkan 'audioUrl'
+// Model Data Pesan
 data class ChatMessage(
     val id: String = "",
     val text: String = "",
     val imageUrl: String = "",
-    val audioUrl: String = "", // <-- Variabel baru untuk menampung link Voice Note
+    val audioUrl: String = "",
     val senderId: String = "",
     val timestamp: Long = 0L,
     val liked: Boolean = false
@@ -77,6 +83,10 @@ fun formatMessageDate(timestamp: Long): String {
     }
 }
 
+val ChatBgColor = Color(0xFFF7F7F7)
+val SenderBubbleColor = Color(0xFF222222)
+val ReceiverBubbleColor = Color.White
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
@@ -93,29 +103,53 @@ fun ChatScreen(
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var isUploading by remember { mutableStateOf(false) }
 
-    // State Perekam Suara (Voice Note)
     var isRecording by remember { mutableStateOf(false) }
     var audioFile by remember { mutableStateOf<File?>(null) }
     var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
 
     var heartAnimationTrigger by remember { mutableStateOf(0L) }
+    var messageToDelete by remember { mutableStateOf<ChatMessage?>(null) }
+
     var receiverName by remember { mutableStateOf(receiverEmail.substringBefore("@")) }
     var receiverProfileImage by remember { mutableStateOf("") }
-    var receiverIsOnline by remember { mutableStateOf(false) }
+    var isReceiverTyping by remember { mutableStateOf(false) }
+
+    var currentUserName by remember { mutableStateOf("Me") }
+    var currentUserPic by remember { mutableStateOf("") }
 
     val listState = rememberLazyListState()
     val roomId = if (currentUserId < receiverUid) "$currentUserId-$receiverUid" else "$receiverUid-$currentUserId"
 
-    // Peluncur Izin Mikrofon
     val audioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        if (!isGranted) {
-            Toast.makeText(context, "Izin mikrofon diperlukan untuk Voice Note", Toast.LENGTH_SHORT).show()
+        if (!isGranted) Toast.makeText(context, "Izin mikrofon diperlukan", Toast.LENGTH_SHORT).show()
+    }
+
+    LaunchedEffect(roomId) {
+        db.collection("ChatRooms").document(roomId).addSnapshotListener { snapshot, _ ->
+            if (snapshot != null && snapshot.exists()) {
+                isReceiverTyping = snapshot.getBoolean("typing_$receiverUid") ?: false
+            }
         }
     }
 
-    // Fungsi Memulai Rekaman
+    LaunchedEffect(messageText) {
+        if (messageText.isNotEmpty()) {
+            db.collection("ChatRooms").document(roomId).set(
+                mapOf("typing_$currentUserId" to true), SetOptions.merge()
+            )
+            delay(3000)
+            db.collection("ChatRooms").document(roomId).set(
+                mapOf("typing_$currentUserId" to false), SetOptions.merge()
+            )
+        } else {
+            db.collection("ChatRooms").document(roomId).set(
+                mapOf("typing_$currentUserId" to false), SetOptions.merge()
+            )
+        }
+    }
+
     fun startRecording() {
         try {
             val file = File(context.cacheDir, "audio_${System.currentTimeMillis()}.m4a")
@@ -130,12 +164,10 @@ fun ChatScreen(
             mediaRecorder = recorder
             isRecording = true
         } catch (e: Exception) {
-            e.printStackTrace()
-            Toast.makeText(context, "Gagal merekam audio", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Gagal merekam", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // Fungsi Berhenti & Mengirim Rekaman
     fun stopAndSendRecording() {
         try {
             mediaRecorder?.stop()
@@ -147,7 +179,7 @@ fun ChatScreen(
                 isUploading = true
                 com.cloudinary.android.MediaManager.get().upload(audioFile!!.absolutePath)
                     .unsigned("ml_default12")
-                    .option("resource_type", "auto") // Otomatis mendeteksi file audio
+                    .option("resource_type", "auto")
                     .callback(object : com.cloudinary.android.callback.UploadCallback {
                         override fun onStart(requestId: String) {}
                         override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {}
@@ -156,17 +188,13 @@ fun ChatScreen(
                             val newMessage = ChatMessage(audioUrl = downloadUrl, senderId = currentUserId, timestamp = System.currentTimeMillis())
                             db.collection("ChatRooms").document(roomId).collection("Messages").add(newMessage)
                             isUploading = false
-                            audioFile?.delete() // Hapus file lokal setelah terkirim
+                            audioFile?.delete()
                         }
-                        override fun onError(requestId: String, error: com.cloudinary.android.callback.ErrorInfo) {
-                            isUploading = false
-                            Toast.makeText(context, "Gagal mengirim voice note", Toast.LENGTH_SHORT).show()
-                        }
+                        override fun onError(requestId: String, error: com.cloudinary.android.callback.ErrorInfo) { isUploading = false }
                         override fun onReschedule(requestId: String, error: com.cloudinary.android.callback.ErrorInfo) {}
                     }).dispatch()
             }
         } catch (e: Exception) {
-            e.printStackTrace()
             isRecording = false
         }
     }
@@ -194,19 +222,22 @@ fun ChatScreen(
     }
 
     LaunchedEffect(receiverUid) {
-        db.collection("Users").document(receiverUid)
-            .addSnapshotListener { doc, _ ->
-                if (doc != null && doc.exists()) {
-                    val fName = doc.getString("firstName") ?: ""
-                    val lName = doc.getString("lastName") ?: ""
-                    val pfp = doc.getString("profileImageUrl") ?: ""
-                    val onlineStatus = doc.getBoolean("isOnline") ?: false
-
-                    if (fName.isNotEmpty() || lName.isNotEmpty()) receiverName = "$fName $lName".trim()
-                    receiverProfileImage = pfp
-                    receiverIsOnline = onlineStatus
-                }
+        db.collection("Users").document(receiverUid).addSnapshotListener { doc, _ ->
+            if (doc != null && doc.exists()) {
+                val fName = doc.getString("firstName") ?: ""
+                val lName = doc.getString("lastName") ?: ""
+                if (fName.isNotEmpty() || lName.isNotEmpty()) receiverName = "$fName $lName".trim()
+                receiverProfileImage = doc.getString("profileImageUrl") ?: ""
             }
+        }
+    }
+
+    LaunchedEffect(currentUserId) {
+        db.collection("Users").document(currentUserId).get().addOnSuccessListener { doc ->
+            val fName = doc.getString("firstName") ?: ""
+            currentUserName = if (fName.isNotEmpty()) fName else "Me"
+            currentUserPic = doc.getString("profileImageUrl") ?: ""
+        }
     }
 
     LaunchedEffect(roomId) {
@@ -220,7 +251,6 @@ fun ChatScreen(
     }
 
     val groupedMessages = messages.groupBy { formatMessageDate(it.timestamp) }
-
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             val totalItems = messages.size + groupedMessages.size
@@ -228,264 +258,288 @@ fun ChatScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
-            modifier = Modifier.imePadding(),
-            topBar = {
-                Surface(color = Color.White, shadowElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp).statusBarsPadding(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.Gray) }
-                        Box(modifier = Modifier.size(40.dp).clip(CircleShape).background(Color(0xFF00796B)), contentAlignment = Alignment.Center) {
-                            if (receiverProfileImage.isNotEmpty()) {
-                                AsyncImage(model = receiverProfileImage, contentDescription = "Profile", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                            } else {
-                                Text(receiverName.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = receiverName, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
-                            Text(
-                                text = if (receiverIsOnline) "Online" else "Offline",
-                                color = if (receiverIsOnline) Color(0xFF00796B) else Color.Gray,
-                                fontSize = 12.sp,
-                                fontWeight = if (receiverIsOnline) FontWeight.Medium else FontWeight.Normal
-                            )
-                        }
+    Box(modifier = Modifier.fillMaxSize().background(ChatBgColor)) {
+        // PERBAIKAN UTAMA: Ditambahkan .imePadding() agar layar terdorong ke atas saat keyboard muncul
+        Column(modifier = Modifier.fillMaxSize().imePadding()) {
+            // --- TOP BAR ---
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
+                    .statusBarsPadding(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier.size(40.dp).clip(CircleShape).background(Color.White).clickable { onBack() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.Black, modifier = Modifier.size(20.dp))
+                }
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(text = receiverName, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.Black)
+                    if (isReceiverTyping) {
+                        Text(text = "sedang mengetik...", fontSize = 12.sp, color = Color(0xFF00C853), fontWeight = FontWeight.Medium)
                     }
                 }
-            },
-            bottomBar = {
-                Surface(color = Color.White, modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp).navigationBarsPadding(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (isUploading) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp).padding(end = 12.dp), color = Color(0xFF90CAF9), strokeWidth = 2.dp)
-                        } else {
-                            IconButton(
-                                onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                                modifier = Modifier.padding(end = 4.dp),
-                                enabled = !isRecording // Matikan tombol gambar saat merekam
-                            ) { Icon(imageVector = Icons.Default.MoreHoriz, contentDescription = "Send Image", tint = Color.Gray) }
-                        }
-                        OutlinedTextField(
-                            value = messageText,
-                            onValueChange = { messageText = it },
-                            placeholder = { Text(if (isRecording) "Merekam suara... Ketuk setop untuk kirim" else "Type here...", color = if (isRecording) Color.Red else Color.Gray) },
-                            modifier = Modifier.weight(1f).height(50.dp),
-                            shape = RoundedCornerShape(24.dp),
-                            enabled = !isRecording, // Matikan ketikan saat merekam
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = Color(0xFFF5F5F5), unfocusedContainerColor = Color(0xFFF5F5F5),
-                                disabledContainerColor = Color(0xFFFFEBEE), disabledBorderColor = Color.Transparent,
-                                focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent
-                            ),
-                            trailingIcon = {
-                                if (messageText.isNotBlank()) {
-                                    IconButton(
-                                        onClick = {
-                                            val newMessage = ChatMessage(text = messageText, senderId = currentUserId, timestamp = System.currentTimeMillis())
-                                            db.collection("ChatRooms").document(roomId).collection("Messages").add(newMessage)
-                                            messageText = ""
-                                        }
-                                    ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color(0xFF90CAF9)) }
-                                } else {
-                                    // Tombol Mic / Berhenti Rekam
-                                    IconButton(
-                                        onClick = {
-                                            val hasMicPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                                            if (!hasMicPermission) {
-                                                audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                            } else {
-                                                if (isRecording) stopAndSendRecording() else startRecording()
-                                            }
-                                        }
-                                    ) {
-                                        if (isRecording) {
-                                            Icon(Icons.Filled.Stop, contentDescription = "Stop", tint = Color.Red)
-                                        } else {
-                                            Icon(Icons.Filled.Mic, contentDescription = "Mic", tint = Color.Gray)
-                                        }
-                                    }
-                                }
-                            }
-                        )
-                    }
-                }
-            },
-            containerColor = Color(0xFFFAFAFA)
-        ) { paddingValues ->
+
+                Box(modifier = Modifier.size(40.dp))
+            }
+
+            // --- AREA PESAN ---
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(vertical = 16.dp)
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp),
+                contentPadding = PaddingValues(vertical = 8.dp)
             ) {
                 groupedMessages.forEach { (dateString, messagesForDate) ->
                     item {
                         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
-                            Text(text = dateString, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
+                            Surface(color = Color.White, shape = RoundedCornerShape(24.dp)) {
+                                Text(dateString, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color.Black, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                            }
                         }
                     }
-
                     items(messagesForDate) { message ->
-                        MessageBubble(
-                            message = message,
-                            currentUserId = currentUserId,
+                        val isMine = message.senderId == currentUserId
+                        MessageBubbleUI(
+                            message = message, isMine = isMine,
+                            profilePic = if (isMine) currentUserPic else receiverProfileImage,
+                            senderName = if (isMine) currentUserName else receiverName,
+                            roomId = roomId,
                             onLikeClick = { isNowLiked ->
                                 if (message.id.isNotEmpty()) {
-                                    db.collection("ChatRooms").document(roomId)
-                                        .collection("Messages").document(message.id)
-                                        .update("liked", isNowLiked)
-
+                                    db.collection("ChatRooms").document(roomId).collection("Messages").document(message.id).update("liked", isNowLiked)
                                     if (isNowLiked) heartAnimationTrigger = System.currentTimeMillis()
                                 }
+                            },
+                            onDeleteClick = { msg ->
+                                messageToDelete = msg
                             }
                         )
+                    }
+                }
+            }
+
+            // --- INPUT AREA BAWAH ---
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
+                    .navigationBarsPadding(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isUploading) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp).padding(end = 12.dp), color = Color.Black, strokeWidth = 2.dp)
+                } else {
+                    IconButton(
+                        onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        modifier = Modifier.padding(end = 4.dp), enabled = !isRecording
+                    ) { Icon(imageVector = Icons.Default.Add, contentDescription = "Send Image", tint = Color.Gray) }
+                }
+
+                Surface(
+                    modifier = Modifier.weight(1f).height(56.dp),
+                    shape = RoundedCornerShape(50), color = Color.White
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 20.dp)) {
+                        BasicTextField(
+                            value = messageText, onValueChange = { messageText = it },
+                            textStyle = TextStyle(color = Color.Black, fontSize = 16.sp),
+                            cursorBrush = SolidColor(Color.Black),
+                            modifier = Modifier.weight(1f), enabled = !isRecording,
+                            decorationBox = { innerTextField ->
+                                if (messageText.isEmpty()) {
+                                    Text(if (isRecording) "Recording..." else "Ask anything here..", color = if (isRecording) Color.Red else Color.Gray, fontSize = 16.sp)
+                                }
+                                innerTextField()
+                            }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Box(
+                    modifier = Modifier
+                        .size(56.dp).clip(CircleShape)
+                        .background(if (isRecording) Color.Red else SenderBubbleColor)
+                        .clickable {
+                            if (messageText.isNotBlank()) {
+                                val newMessage = ChatMessage(text = messageText, senderId = currentUserId, timestamp = System.currentTimeMillis())
+                                db.collection("ChatRooms").document(roomId).collection("Messages").add(newMessage)
+
+                                messageText = ""
+                                db.collection("ChatRooms").document(roomId).set(
+                                    mapOf("typing_$currentUserId" to false), SetOptions.merge()
+                                )
+                            } else {
+                                val hasMicPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                                if (!hasMicPermission) audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                else if (isRecording) stopAndSendRecording() else startRecording()
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (messageText.isNotBlank()) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(24.dp))
+                    } else {
+                        Icon(if (isRecording) Icons.Filled.Stop else Icons.Filled.Mic, contentDescription = "Mic", tint = Color.White, modifier = Modifier.size(24.dp))
                     }
                 }
             }
         }
 
         if (heartAnimationTrigger > 0) FloatingHeartsOverlay(key = heartAnimationTrigger)
+
+        // --- DIALOG HAPUS PESAN ---
+        if (messageToDelete != null) {
+            AlertDialog(
+                onDismissRequest = { messageToDelete = null },
+                title = { Text("Tarik Pesan?", fontWeight = FontWeight.Bold) },
+                text = { Text("Pesan ini akan dihapus untuk Anda dan lawan bicara. Lanjutkan?") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val msgId = messageToDelete!!.id
+                            if (msgId.isNotEmpty()) {
+                                db.collection("ChatRooms").document(roomId).collection("Messages").document(msgId).delete()
+                            }
+                            messageToDelete = null
+                        }
+                    ) {
+                        Text("Tarik", color = Color.Red, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { messageToDelete = null }) { Text("Batal", color = Color.Black) }
+                },
+                containerColor = Color.White
+            )
+        }
     }
 }
 
 @Composable
-fun MessageBubble(message: ChatMessage, currentUserId: String, onLikeClick: (Boolean) -> Unit) {
-    val isMine = message.senderId == currentUserId
+fun MessageBubbleUI(
+    message: ChatMessage, isMine: Boolean, profilePic: String,
+    senderName: String, roomId: String,
+    onLikeClick: (Boolean) -> Unit,
+    onDeleteClick: (ChatMessage) -> Unit
+) {
     var localIsLiked by remember(message.liked) { mutableStateOf(message.liked) }
     val timeString = remember(message.timestamp) { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)) }
+    val textColor = if (isMine) Color.White else Color.Black
 
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start,
-        verticalAlignment = Alignment.CenterVertically
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        horizontalAlignment = if (isMine) Alignment.End else Alignment.Start
     ) {
-        if (isMine) {
-            Icon(
-                imageVector = Icons.Filled.Favorite,
-                contentDescription = "Like",
-                tint = if (localIsLiked) Color(0xFFFF5252) else Color(0xFFE0E0E0),
-                modifier = Modifier.size(28.dp).padding(end = 6.dp).clickable {
-                    localIsLiked = !localIsLiked
-                    onLikeClick(localIsLiked)
-                }
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .background(
-                    color = if (isMine) Color(0xFF90CAF9) else Color(0xFFEBEBEB),
-                    shape = if (isMine) RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp) else RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp)
-                )
-                .padding(horizontal = 16.dp, vertical = 10.dp)
-                .widthIn(max = 250.dp)
-        ) {
-            Column {
-                // Render Gambar Jika Ada
-                if (message.imageUrl.isNotEmpty()) {
-                    AsyncImage(
-                        model = message.imageUrl,
-                        contentDescription = "Shared Image",
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp).clip(RoundedCornerShape(12.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-                    if (message.text.isNotBlank() || message.audioUrl.isNotBlank()) Spacer(modifier = Modifier.height(6.dp))
-                }
-
-                // Render Audio Player Jika Ada
-                if (message.audioUrl.isNotEmpty()) {
-                    var isPlaying by remember { mutableStateOf(false) }
-                    val mediaPlayer = remember { MediaPlayer() }
-
-                    // Bersihkan pemutar saat pesan digeser keluar layar
-                    DisposableEffect(Unit) {
-                        onDispose {
-                            if (mediaPlayer.isPlaying) mediaPlayer.stop()
-                            mediaPlayer.release()
-                        }
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
-                        IconButton(
-                            onClick = {
-                                if (isPlaying) {
-                                    mediaPlayer.pause()
-                                    isPlaying = false
-                                } else {
-                                    try {
-                                        mediaPlayer.reset()
-                                        mediaPlayer.setDataSource(message.audioUrl)
-                                        mediaPlayer.prepareAsync()
-                                        mediaPlayer.setOnPreparedListener {
-                                            it.start()
-                                            isPlaying = true
-                                        }
-                                        mediaPlayer.setOnCompletionListener {
-                                            isPlaying = false
-                                        }
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
-                                    }
-                                }
-                            },
-                            modifier = Modifier.size(36.dp).background(if (isMine) Color(0xFF1565C0) else Color.Gray, CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                contentDescription = "Play/Pause",
-                                tint = Color.White
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Voice Note", color = if (isMine) Color(0xFF1565C0) else Color.DarkGray, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
-                }
-
-                // Render Teks
-                if (message.text.isNotBlank()) {
-                    Row(
-                        verticalAlignment = Alignment.Bottom,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = message.text, color = Color.Black, fontSize = 15.sp,
-                            modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp)
-                        )
-                        Text(text = timeString, color = if (isMine) Color(0xFF1565C0) else Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                    }
-                } else if (message.imageUrl.isNotEmpty() || message.audioUrl.isNotEmpty()) {
-                    Text(
-                        text = timeString, color = if (isMine) Color(0xFF1565C0) else Color.Gray,
-                        fontSize = 11.sp, fontWeight = FontWeight.Medium,
-                        modifier = Modifier.align(Alignment.End).padding(top = 4.dp)
-                    )
-                }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 6.dp)) {
+            if (!isMine) {
+                ProfilePicSmall(url = profilePic, initial = senderName)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(text = senderName, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+            } else {
+                Text(text = senderName, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                Spacer(modifier = Modifier.width(8.dp))
+                ProfilePicSmall(url = profilePic, initial = senderName)
             }
         }
 
-        if (!isMine) {
-            Icon(
-                imageVector = Icons.Filled.Favorite,
-                contentDescription = "Like",
-                tint = if (localIsLiked) Color(0xFFFF5252) else Color(0xFFE0E0E0),
-                modifier = Modifier.size(28.dp).padding(start = 6.dp).clickable {
-                    localIsLiked = !localIsLiked
-                    onLikeClick(localIsLiked)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (isMine) {
+                Icon(
+                    imageVector = Icons.Filled.Favorite, contentDescription = "Like",
+                    tint = if (localIsLiked) Color(0xFFFF5252) else Color(0xFFE0E0E0),
+                    modifier = Modifier.size(20.dp).padding(end = 6.dp).clickable { localIsLiked = !localIsLiked; onLikeClick(localIsLiked) }
+                )
+            }
+
+            Surface(
+                color = if (isMine) SenderBubbleColor else ReceiverBubbleColor,
+                shape = RoundedCornerShape(
+                    topStart = 20.dp, topEnd = 20.dp,
+                    bottomStart = if (isMine) 20.dp else 4.dp, bottomEnd = if (isMine) 4.dp else 20.dp
+                ),
+                shadowElevation = if (isMine) 0.dp else 1.dp,
+                modifier = Modifier
+                    .widthIn(max = 260.dp)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onLongPress = {
+                                if (isMine) {
+                                    onDeleteClick(message)
+                                }
+                            }
+                        )
+                    }
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    if (message.imageUrl.isNotEmpty()) {
+                        AsyncImage(
+                            model = message.imageUrl, contentDescription = "Image",
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp).clip(RoundedCornerShape(12.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                        if (message.text.isNotBlank() || message.audioUrl.isNotBlank()) Spacer(modifier = Modifier.height(6.dp))
+                    }
+
+                    if (message.audioUrl.isNotEmpty()) {
+                        var isPlaying by remember { mutableStateOf(false) }
+                        val mediaPlayer = remember { MediaPlayer() }
+                        DisposableEffect(Unit) { onDispose { if (mediaPlayer.isPlaying) mediaPlayer.stop(); mediaPlayer.release() } }
+
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
+                            IconButton(
+                                onClick = {
+                                    if (isPlaying) { mediaPlayer.pause(); isPlaying = false }
+                                    else {
+                                        try {
+                                            mediaPlayer.reset(); mediaPlayer.setDataSource(message.audioUrl); mediaPlayer.prepareAsync()
+                                            mediaPlayer.setOnPreparedListener { it.start(); isPlaying = true }
+                                            mediaPlayer.setOnCompletionListener { isPlaying = false }
+                                        } catch (e: Exception) { e.printStackTrace() }
+                                    }
+                                },
+                                modifier = Modifier.size(36.dp).background(if (isMine) Color.White else Color.Black, CircleShape)
+                            ) {
+                                Icon(imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = "Play/Pause", tint = if (isMine) Color.Black else Color.White)
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Voice Note", color = textColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
+
+                    if (message.text.isNotBlank()) {
+                        Text(text = message.text, color = textColor, fontSize = 15.sp, lineHeight = 22.sp)
+                    }
                 }
-            )
+            }
+
+            if (!isMine) {
+                Icon(
+                    imageVector = Icons.Filled.Favorite, contentDescription = "Like",
+                    tint = if (localIsLiked) Color(0xFFFF5252) else Color(0xFFE0E0E0),
+                    modifier = Modifier.size(20.dp).padding(start = 6.dp).clickable { localIsLiked = !localIsLiked; onLikeClick(localIsLiked) }
+                )
+            }
         }
+        Text(text = timeString, fontSize = 10.sp, color = Color.Gray, modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp))
     }
 }
 
-// --- KOMPONEN ANIMASI PERNAK PERNIK LOVE ---
+@Composable
+fun ProfilePicSmall(url: String, initial: String) {
+    Box(modifier = Modifier.size(24.dp).clip(CircleShape).background(Color.DarkGray), contentAlignment = Alignment.Center) {
+        if (url.isNotEmpty()) AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        else Text(initial.take(1).uppercase(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
 @Composable
 fun FloatingHeartsOverlay(key: Long) {
     val hearts = remember(key) { List(10) { it } }
@@ -521,9 +575,7 @@ fun AnimatedHeart(index: Int) {
 
     if (alpha.value > 0f) {
         Icon(
-            imageVector = Icons.Filled.Favorite,
-            contentDescription = null,
-            tint = Color(0xFFFF5252),
+            imageVector = Icons.Filled.Favorite, contentDescription = null, tint = Color(0xFFFF5252),
             modifier = Modifier.offset(x = offsetX.value.dp, y = offsetY.value.dp).scale(scale.value).alpha(alpha.value).size(40.dp)
         )
     }

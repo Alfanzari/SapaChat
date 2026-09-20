@@ -1,14 +1,23 @@
 package com.syauqialfanzari0008.sapachat
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.core.content.ContextCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.messaging.FirebaseMessaging
 
 // Import layar-layar yang ada di aplikasi SapaChat
 import com.syauqialfanzari0008.sapachat.ui.login.WelcomeScreen
@@ -19,15 +28,33 @@ import com.syauqialfanzari0008.sapachat.ui.login.AdminHomeScreen
 import com.syauqialfanzari0008.sapachat.ui.login.ChatScreen
 import com.syauqialfanzari0008.sapachat.ui.login.SettingsScreen
 import com.syauqialfanzari0008.sapachat.ui.login.EditProfileScreen
+import com.syauqialfanzari0008.sapachat.ui.login.FeedScreen
 
 class MainActivity : ComponentActivity() {
+
+    // Launcher untuk meminta izin notifikasi Android 13+
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (!isGranted) {
+            Toast.makeText(this, "Izin notifikasi ditolak", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Inisialisasi Cloudinary untuk upload gambar profil secara gratis
+        // Minta Izin Notifikasi
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
+        // Inisialisasi Cloudinary
         val config = HashMap<String, String>()
-        config["cloud_name"] = "b5nyzswj" // Sesuai dengan Cloud name Cloudinary kamu
+        config["cloud_name"] = "b5nyzswj"
         try {
             com.cloudinary.android.MediaManager.init(this, config)
         } catch (e: Exception) {
@@ -44,13 +71,25 @@ class MainActivity : ComponentActivity() {
 fun SapaChatNavigation() {
     val navController = rememberNavController()
     val auth = FirebaseAuth.getInstance()
+    val db = FirebaseFirestore.getInstance()
 
-    // CEK SESI LOGIN: Jika ada akun tersimpan, langsung arahkan ke Beranda (user_home)
+    // Mendapatkan dan menyimpan Token FCM saat aplikasi dibuka
+    LaunchedEffect(auth.currentUser) {
+        val userId = auth.currentUser?.uid
+        if (userId != null) {
+            FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    val token = task.result
+                    db.collection("Users").document(userId).update("fcmToken", token)
+                }
+            }
+        }
+    }
+
     val startDest = if (auth.currentUser != null) "user_home" else "welcome"
 
     NavHost(navController = navController, startDestination = startDest) {
 
-        // 0. Rute Layar Selamat Datang (Welcome Screen)
         composable("welcome") {
             WelcomeScreen(
                 onNavigateToRegister = { navController.navigate("register") },
@@ -58,39 +97,44 @@ fun SapaChatNavigation() {
             )
         }
 
-        // Rute Layar Pengaturan (Settings)
         composable("settings") {
             SettingsScreen(
                 onNavigateToHome = {
                     navController.navigate("user_home") {
-                        popUpTo("user_home") { inclusive = true }
+                        popUpTo("user_home") { inclusive = false }
+                    }
+                },
+                onNavigateToFeed = {
+                    navController.navigate("feed") {
+                        popUpTo("user_home") { saveState = true }
+                        restoreState = true
                     }
                 },
                 onNavigateToEditProfile = {
                     navController.navigate("edit_profile")
                 },
                 onLogout = {
-                    navController.navigate("welcome") {
-                        popUpTo(0)
-                    }
+                    navController.navigate("welcome") { popUpTo(0) }
                 }
             )
         }
 
-        // Rute Layar Edit Profile (Terhubung ke Cloudinary & Firestore)
         composable("edit_profile") {
+            val context = androidx.compose.ui.platform.LocalContext.current
+
             EditProfileScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onSaveProfile = { firstName, lastName, dob, email, newImageUri ->
+                onSaveProfile = { firstName, lastName, dob, username, email, newImageUri ->
                     val userId = FirebaseAuth.getInstance().currentUser?.uid
                     if (userId != null) {
-                        val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                        val formattedUsername = username.trim().lowercase().replace(" ", "")
 
                         fun saveUserData(imageUrl: String = "") {
                             val userMap = mutableMapOf<String, Any>(
                                 "firstName" to firstName,
                                 "lastName" to lastName,
                                 "dateOfBirth" to dob,
+                                "username" to formattedUsername,
                                 "email" to email
                             )
                             if (imageUrl.isNotEmpty()) {
@@ -100,88 +144,89 @@ fun SapaChatNavigation() {
                             db.collection("Users").document(userId)
                                 .set(userMap, com.google.firebase.firestore.SetOptions.merge())
                                 .addOnSuccessListener {
+                                    Toast.makeText(context, "Profil berhasil disimpan!", Toast.LENGTH_SHORT).show()
                                     navController.popBackStack()
                                 }
                         }
 
-                        if (newImageUri != null) {
-                            com.cloudinary.android.MediaManager.get().upload(newImageUri)
-                                .unsigned("ml_default12")
-                                .callback(object : com.cloudinary.android.callback.UploadCallback {
-                                    override fun onStart(requestId: String) {}
-                                    override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {}
-                                    override fun onSuccess(requestId: String, resultData: Map<*, *>) {
-                                        val downloadUrl = resultData["secure_url"].toString()
-                                        saveUserData(downloadUrl)
+                        fun uploadImageAndSave() {
+                            if (newImageUri != null) {
+                                com.cloudinary.android.MediaManager.get().upload(newImageUri)
+                                    .unsigned("ml_default12")
+                                    .callback(object : com.cloudinary.android.callback.UploadCallback {
+                                        override fun onStart(requestId: String) {}
+                                        override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {}
+                                        override fun onSuccess(requestId: String, resultData: Map<*, *>) {
+                                            saveUserData(resultData["secure_url"].toString())
+                                        }
+                                        override fun onError(requestId: String, error: com.cloudinary.android.callback.ErrorInfo) {
+                                            saveUserData()
+                                        }
+                                        override fun onReschedule(requestId: String, error: com.cloudinary.android.callback.ErrorInfo) {}
+                                    }).dispatch()
+                            } else {
+                                saveUserData()
+                            }
+                        }
+
+                        if (formattedUsername.isNotEmpty()) {
+                            db.collection("Users")
+                                .whereEqualTo("username", formattedUsername)
+                                .get()
+                                .addOnSuccessListener { documents ->
+                                    val isTakenByOther = documents.any { it.id != userId }
+                                    if (isTakenByOther) {
+                                        Toast.makeText(context, "Username @$formattedUsername sudah dipakai pengguna lain!", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        uploadImageAndSave()
                                     }
-                                    override fun onError(requestId: String, error: com.cloudinary.android.callback.ErrorInfo) {
-                                        saveUserData()
-                                    }
-                                    override fun onReschedule(requestId: String, error: com.cloudinary.android.callback.ErrorInfo) {}
-                                }).dispatch()
+                                }
                         } else {
-                            saveUserData()
+                            uploadImageAndSave()
                         }
                     }
                 }
             )
         }
 
-        // 1. Rute Layar Login
         composable("login") {
             LoginScreen(
                 onNavigateToRegister = { navController.navigate("register") },
-                onNavigateToUserHome = {
-                    navController.navigate("user_home") {
-                        popUpTo(0)
-                    }
-                },
-                onNavigateToAdminHome = {
-                    navController.navigate("admin_home") {
-                        popUpTo(0)
-                    }
-                }
+                onNavigateToUserHome = { navController.navigate("user_home") { popUpTo(0) } },
+                onNavigateToAdminHome = { navController.navigate("admin_home") { popUpTo(0) } }
             )
         }
 
-        // 2. Rute Layar Register
         composable("register") {
             RegisterScreen(
-                onNavigateToLogin = {
-                    navController.navigate("login") {
-                        popUpTo("register") { inclusive = true }
-                    }
-                }
+                onNavigateToLogin = { navController.navigate("login") { popUpTo("register") { inclusive = true } } }
             )
         }
 
-        // 3. Rute Layar Beranda User
         composable("user_home") {
             UserHomeScreen(
-                onNavigateToSettings = {
-                    navController.navigate("settings")
+                onNavigateToFeed = {
+                    navController.navigate("feed") { popUpTo("user_home") { saveState = true }; restoreState = true }
                 },
-                onNavigateToChat = { uid, email ->
-                    navController.navigate("chat/$uid/$email")
-                }
+                onNavigateToSettings = { navController.navigate("settings") },
+                onNavigateToChat = { uid, email -> navController.navigate("chat/$uid/$email") }
             )
         }
 
-        // 4. Rute Layar Beranda Admin
+        composable("feed") {
+            FeedScreen(
+                onNavigateToHome = { navController.navigate("user_home") { popUpTo("user_home") { inclusive = false } } },
+                onNavigateToSettings = { navController.navigate("settings") }
+            )
+        }
+
         composable("admin_home") {
             AdminHomeScreen(
-                onLogout = {
-                    navController.navigate("welcome") {
-                        popUpTo(0)
-                    }
-                },
-                onNavigateToChat = { uid, email ->
-                    navController.navigate("chat/$uid/$email")
-                }
+                onLogout = { navController.navigate("welcome") { popUpTo(0) } },
+                onNavigateToChat = { uid, email -> navController.navigate("chat/$uid/$email") }
             )
         }
 
-        // 5. Rute Layar Chat Room Privat
         composable("chat/{uid}/{email}") { backStackEntry ->
             val uid = backStackEntry.arguments?.getString("uid") ?: ""
             val email = backStackEntry.arguments?.getString("email") ?: ""
